@@ -204,7 +204,8 @@ function turnTimeFor(room) {
   if (!room.settings.speedup) return base;
   const alive = Math.max(1, alivePlayers(room).length);
   const laps = Math.floor(room.round.answers.length / alive);
-  return Math.max(Math.ceil(base * 0.4), base - laps);
+  // Varje varv blir tiden två sekunder kortare, ner till ungefär en tredjedel.
+  return Math.max(4, Math.ceil(base * 0.3), base - laps * 2);
 }
 
 function beginTurn(room, pid, ms) {

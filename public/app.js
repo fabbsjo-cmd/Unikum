@@ -171,6 +171,7 @@
     } else if (m.kind === 'lifeLost') {
       sfx.lose();
       seatFx(m.pid, 'hit', '💔');
+      bigHeart(m.pid);
       if (m.pid === me && navigator.vibrate) navigator.vibrate([100, 60, 100]);
     }
   }
@@ -281,7 +282,7 @@
         h('div', null, h('div', { style: 'font-weight:700;margin-bottom:6px' }, 'Liv'), seg([1, 2, 3, 4, 5], s.lives, (v) => '❤️'.repeat(1) + ' ' + v, (v) => setS({ lives: v }))),
         h('div', null, h('div', { style: 'font-weight:700;margin-bottom:6px' }, 'Kategorier'),
           h('div', { class: 'seg' }, PACKS.map(([k, label]) => h('button', { class: s.packs[k] ? 'sel' : '', disabled: !host, onclick: () => setS({ packs: { [k]: !s.packs[k] } }) }, label)))),
-        toggle('Tempoökning', s.speedup, () => setS({ speedup: !s.speedup }), 'Tiden krymper för varje varv'),
+        toggle('Tempoökning', s.speedup, () => setS({ speedup: !s.speedup }), 'Tiden krymper med 2 s för varje varv'),
         toggle('Strikt läge', s.strict, () => setS({ strict: !s.strict }), 'Bara ord från ordlistan, ingen röstning')),
       h('div', { class: 'answerbox' },
         host
@@ -317,6 +318,8 @@
   let shownAnswers = 0;
   let shownRound = null;
   let bottomKey = '';
+  let wasMyTurn = false;
+  const isMyTurn = () => state && state.phase === 'turn' && state.round && state.round.turnPid === me;
   let overlayKey = '';
 
   function seatOrder() {
@@ -415,7 +418,7 @@
       s.el.classList.toggle('off', !p.connected);
       s.el.classList.toggle('me', pid === me);
       s.el.querySelector('.nm').textContent = pid === me ? 'Du' : p.name;
-      s.el.querySelector('.hearts').textContent = hearts(p);
+      renderHearts(s, p);
       const pts = s.el.querySelector('.pts');
       if (pts.textContent !== p.score + ' p') pts.textContent = p.score + ' p';
     }
@@ -440,36 +443,53 @@
     tl.textContent = state.phase === 'turn' ? (myTurn ? '✨ Din tur! ✨' : `${cur ? cur.name : ''} tänker…`)
       : state.phase === 'vote' ? 'Röstning pågår…' : state.phase === 'countdown' ? 'Gör er redo!' : '';
 
-    // Svarsfält eller reaktioner
-    const bkey = myTurn ? 'input' : 'reacts';
+    // Svarsfält: alla som är med kan skriva i förväg och skicka när det blir deras tur
+    const canPlay = meP && meP.alive && !meP.spectator;
+    const bkey = canPlay ? 'input' : 'reacts';
     if (bkey !== bottomKey) {
       bottomKey = bkey;
       const bottom = document.getElementById('bottom');
-      if (myTurn) {
+      const reacts = h('div', { class: 'reacts' }, REACTS.map((e) => h('button', { onclick: () => sendMsg({ t: 'react', emoji: e }), 'aria-label': 'Reagera ' + e }, e)));
+      if (canPlay) {
         const inp = h('input', { class: 'input', id: 'answer', maxlength: 40, placeholder: 'Skriv ditt svar…', autocomplete: 'off', autocorrect: 'off', autocapitalize: 'none', spellcheck: 'false', enterkeyhint: 'send' });
         let lastSent = 0;
         inp.addEventListener('input', () => {
+          if (!isMyTurn()) return;
           const t = Date.now();
           if (t - lastSent > 120) { lastSent = t; sendMsg({ t: 'typing', text: inp.value }); }
           else setTimeout(() => sendMsg({ t: 'typing', text: inp.value }), 130);
         });
-        bottom.replaceChildren(h('div', { class: 'answerbox' }, h('form', { onsubmit: (e) => {
+        const form = h('form', { onsubmit: (e) => {
           e.preventDefault();
           const v = inp.value.trim();
           if (!v) return;
+          if (!isMyTurn()) {
+            form.classList.remove('shake'); void form.offsetWidth; form.classList.add('shake');
+            return toast('Vänta tills det är din tur – ordet ligger kvar');
+          }
           sendMsg({ t: 'answer', text: v });
           inp.value = ''; // töm direkt, oavsett rätt eller fel
           sendMsg({ t: 'typing', text: '' });
           inp.focus();
-        } }, h('div', { style: 'flex:1' }, inp), h('button', { class: 'btn', type: 'submit' }, 'Skicka'))));
+        } }, h('div', { style: 'flex:1' }, inp), h('button', { class: 'btn', type: 'submit', id: 'sendbtn' }, 'Skicka'));
+        bottom.replaceChildren(h('div', { class: 'answerbox' }, form), reacts);
         inp.focus({ preventScroll: true });
       } else {
-        bottom.replaceChildren(h('div', { class: 'reacts' }, REACTS.map((e) => h('button', { onclick: () => sendMsg({ t: 'react', emoji: e }), 'aria-label': 'Reagera ' + e }, e))));
+        bottom.replaceChildren(reacts);
       }
-    } else if (myTurn) {
-      const inp = document.getElementById('answer');
-      if (inp && document.activeElement !== inp) inp.focus({ preventScroll: true });
     }
+    const inp = document.getElementById('answer');
+    if (inp) {
+      const box = inp.closest('.answerbox');
+      box.classList.toggle('waiting', !myTurn);
+      box.classList.toggle('ready', myTurn);
+      const btn = document.getElementById('sendbtn');
+      btn.textContent = myTurn ? 'Skicka' : 'Vänta…';
+      inp.placeholder = myTurn ? 'Skriv ditt svar…' : 'Förbered ditt svar…';
+      if (myTurn && !wasMyTurn && inp.value) sendMsg({ t: 'typing', text: inp.value });
+      if (myTurn && document.activeElement !== inp) inp.focus({ preventScroll: true });
+    }
+    wasMyTurn = myTurn;
 
     // Svarslistan: lägg bara till nya svar
     const feed = document.getElementById('feed');
@@ -492,6 +512,20 @@
     tickTimer();
   }
 
+  function renderHearts(s, p) {
+    const el = s.el.querySelector('.hearts');
+    if (p.spectator) { el.textContent = '👀'; s.lives = null; return; }
+    const total = state.settings.lives;
+    const lost = s.lives != null && p.lives < s.lives;
+    if (s.lives === p.lives && el.childElementCount === total) return;
+    el.replaceChildren(...Array.from({ length: total }, (_, i) => {
+      const alive = i < p.lives;
+      const justLost = lost && i >= p.lives && i < s.lives;
+      return h('span', { class: 'heart' + (alive ? '' : ' gone') + (justLost ? ' breaking' : '') }, alive ? '❤️' : justLost ? '💔' : '🖤');
+    }));
+    s.lives = p.lives;
+  }
+
   // Pratbubbla vid en spelares plats
   function seatBubble(pid, text, kind, answer) {
     const s = table && table.seats.get(pid);
@@ -508,6 +542,14 @@
       s.el.classList.remove('cheer'); void s.el.offsetWidth; s.el.classList.add('cheer');
     }
     s.hideT = setTimeout(() => { b.className = b.className.replace(/ show.*$/, ''); }, answer ? 1800 : 1400);
+  }
+
+  function bigHeart(pid) {
+    const p = player(pid);
+    const el = h('div', { class: 'heartbreak' }, h('div', { class: 'hb' }, '💔'),
+      h('div', { class: 'hbtext' }, pid === me ? 'Du tappade ett liv!' : `${p ? p.name : ''} tappade ett liv!`));
+    document.body.append(el);
+    setTimeout(() => el.remove(), 1500);
   }
 
   function seatFx(pid, cls, emoji) {
