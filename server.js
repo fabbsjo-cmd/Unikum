@@ -259,7 +259,7 @@ function timeout(room) {
   room.phase = 'roundEnd';
   event(room, { kind: 'lifeLost', pid: loser && loser.id });
   sync(room);
-  setTimer(room, 6000, () => afterRound(room));
+  setTimer(room, 7500, () => afterRound(room));
 }
 
 function afterRound(room) {

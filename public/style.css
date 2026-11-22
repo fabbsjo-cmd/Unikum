@@ -246,7 +246,7 @@ h1, h2, h3, .display { font-family: 'Baloo 2', 'Nunito', sans-serif; line-height
 @keyframes floatup { from { transform: translateY(0) scale(.6); opacity: 1 } 20% { transform: translateY(-6px) scale(1.2) } to { transform: translateY(-50px) scale(1); opacity: 0 } }
 .reactpop { position: absolute; right: -4px; top: -4px; font-size: 26px; animation: pop 1.6s ease-out forwards; pointer-events: none; z-index: 6; }
 .turnline.mine { color: var(--accent); font-family: 'Baloo 2'; font-size: 24px; animation: thump 1s ease-in-out infinite; }
-.overlay.delayed { animation: fade .3s 1.3s backwards; }
+.overlay.delayed { animation: fade .3s 3s backwards; }
 .big.spin { animation: spin .8s cubic-bezier(.34, 1.56, .64, 1); }
 @keyframes spin { from { transform: rotate(-200deg) scale(.2) } }
 #bottom { margin-top: 4px; }
@@ -260,7 +260,7 @@ h1, h2, h3, .display { font-family: 'Baloo 2', 'Nunito', sans-serif; line-height
 .seat2 .hearts { font-size: 17px; letter-spacing: 0; display: flex; gap: 1px; justify-content: center; margin: 2px 0; }
 .heart { display: inline-block; transition: transform .2s; }
 .heart.gone { opacity: .35; transform: scale(.8); }
-.heart.breaking { animation: heartbreak 1.2s ease-out forwards; opacity: 1; }
+.heart.breaking { animation: heartbreak 1.2s ease-out .7s backwards; opacity: .35; transform: scale(.8); }
 @keyframes heartbreak { 0% { transform: scale(1) } 20% { transform: scale(2.4) rotate(-12deg) } 35% { transform: scale(2.2) rotate(12deg) } 50% { transform: scale(2.3) rotate(-8deg) } 100% { transform: scale(.8); opacity: .35 } }
 .heartbreak { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; z-index: 25; pointer-events: none; background: radial-gradient(circle, rgba(255, 60, 80, .35), transparent 60%); animation: hbfade 1.5s ease-out forwards; }
 .heartbreak .hb { font-size: 120px; line-height: 1; animation: hbpop 1.2s cubic-bezier(.34, 1.56, .64, 1); filter: drop-shadow(0 8px 0 rgba(0,0,0,.3)); }
@@ -272,3 +272,68 @@ h1, h2, h3, .display { font-family: 'Baloo 2', 'Nunito', sans-serif; line-height
 .answerbox.waiting .input { border-color: transparent; opacity: .85; }
 .answerbox.waiting .btn { background: var(--card2); color: var(--muted); }
 .answerbox.ready .input { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(255, 212, 59, .3); }
+
+/* ---------- Kategoriskylt ---------- */
+.catbanner { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 4px auto 0; padding: 10px 16px; max-width: 460px;
+  background: linear-gradient(160deg, #ffe066, #ffa94d); color: #2a1300; border-radius: 18px; box-shadow: var(--shadow); text-align: center; }
+.catbanner .cemoji { font-size: 26px; line-height: 1; }
+.catbanner .cname { font-family: 'Baloo 2'; font-weight: 800; font-size: clamp(18px, 5.4vw, 26px); line-height: 1.05; }
+.catbanner.flip { animation: flip .6s ease-out; }
+
+/* ---------- Tigern ---------- */
+.tcenter { inset: 4%; justify-content: flex-start; padding: 0; }
+.tiger { position: relative; width: 92%; margin-top: 2%; z-index: 3; transition: filter .4s; --fur: #f7a531; }
+.tiger-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.tiger .fur { fill: var(--fur); transition: fill .5s; }
+.tiger .brow { fill: none; stroke: #2b1a10; stroke-width: 6; stroke-linecap: round; transition: transform .35s; transform-box: fill-box; transform-origin: center; }
+.tiger .mouth-closed path { fill: none; stroke: #2b1a10; stroke-width: 4; stroke-linecap: round; }
+.tiger .whiskers path { stroke: #2b1a10; stroke-width: 2.5; stroke-linecap: round; opacity: .7; }
+.tiger .iris { fill: #2a6b2f; transition: fill .4s; }
+.tiger .pupil { transition: transform .5s cubic-bezier(.34, 1.56, .64, 1); }
+.tiger .lid { fill: var(--fur); transition: transform .35s, fill .5s; transform-box: fill-box; transform-origin: top; transform: scaleY(0.25); }
+.tiger .mouth-open { opacity: 0; transition: opacity .2s; }
+.tiger .ears { transition: transform .35s; transform-origin: 100px 110px; }
+
+/* Lugn: andas långsamt */
+.tiger[data-mood="calm"] { animation: breathe 3s ease-in-out infinite; }
+.tiger[data-mood="calm"] .brow-l { transform: rotate(-6deg); } .tiger[data-mood="calm"] .brow-r { transform: rotate(6deg); }
+@keyframes breathe { 50% { transform: scale(1.03) } }
+/* Vaksam: ögonen öppnas, öronen spetsas */
+.tiger[data-mood="alert"] .lid { transform: scaleY(0); }
+.tiger[data-mood="alert"] .iris { fill: #b8860b; }
+.tiger[data-mood="alert"] { animation: sway 1.4s ease-in-out infinite; }
+@keyframes sway { 25% { transform: rotate(-3deg) } 75% { transform: rotate(3deg) } }
+/* Arg: rynkade ögonbryn, visar tänderna, rödare päls */
+.tiger[data-mood="angry"] { --fur: #f2802a; animation: grr .5s ease-in-out infinite; }
+.tiger[data-mood="angry"] .lid, .tiger[data-mood="furious"] .lid { transform: scaleY(0); }
+.tiger[data-mood="angry"] .brow-l { transform: translateY(4px) rotate(18deg); } .tiger[data-mood="angry"] .brow-r { transform: translateY(4px) rotate(-18deg); }
+.tiger[data-mood="angry"] .iris { fill: #d9480f; }
+.tiger[data-mood="angry"] .mouth-open { opacity: 1; } .tiger[data-mood="angry"] .mouth-closed { opacity: 0; }
+@keyframes grr { 50% { transform: scale(1.05) translateY(-2px) } }
+/* Rasande: skakar, glöder rött, ånga ur öronen */
+.tiger[data-mood="furious"] { --fur: #e8590c; filter: drop-shadow(0 0 14px rgba(255, 40, 40, .85)); animation: rage .12s linear infinite; }
+.tiger[data-mood="furious"] .brow-l { transform: translateY(7px) rotate(28deg); } .tiger[data-mood="furious"] .brow-r { transform: translateY(7px) rotate(-28deg); }
+.tiger[data-mood="furious"] .iris { fill: #e03131; }
+.tiger[data-mood="furious"] .mouth-open { opacity: 1; } .tiger[data-mood="furious"] .mouth-closed { opacity: 0; }
+.tiger[data-mood="furious"] .ears { transform: scale(.9) translateY(6px); }
+@keyframes rage { 0% { translate: -2px 0 } 25% { translate: 2px -1px } 50% { translate: -1px 1px } 75% { translate: 2px 1px } 100% { translate: -2px 0 } }
+.tiger-steam { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s; }
+.tiger[data-mood="furious"] .tiger-steam { opacity: 1; }
+.tiger-steam i { position: absolute; top: 8%; width: 16%; aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,.75); animation: steam .8s ease-out infinite; }
+.tiger-steam i:first-child { left: 6%; } .tiger-steam i:last-child { right: 6%; animation-delay: .4s; }
+@keyframes steam { from { transform: translateY(0) scale(.4); opacity: .9 } to { transform: translateY(-40px) scale(1.4); opacity: 0 } }
+/* Attack */
+.tiger.attacking { z-index: 30; animation: none !important; }
+.tiger.chomp .mouth-open { animation: chomp .25s 2; }
+@keyframes chomp { 50% { transform: scaleY(.3) } }
+.claw { position: absolute; left: 50%; top: 30px; width: 76px; height: 76px; transform: translate(-50%, -50%) rotate(-20deg); pointer-events: none; z-index: 7; display: flex; gap: 10px; justify-content: center; }
+.claw i { width: 7px; height: 100%; border-radius: 6px; background: linear-gradient(#fff, #ff3b3b); box-shadow: 0 0 8px rgba(255, 50, 50, .9); transform-origin: top; animation: slash .35s ease-out forwards, fadeout .5s .4s forwards; transform: scaleY(0); }
+.claw i:nth-child(2) { animation-delay: .05s, .45s; } .claw i:nth-child(3) { animation-delay: .1s, .5s; }
+@keyframes slash { to { transform: scaleY(1) } }
+@keyframes fadeout { to { opacity: 0 } }
+.stolen-heart { position: absolute; font-size: 26px; z-index: 31; pointer-events: none; filter: drop-shadow(0 0 8px rgba(255, 60, 80, .9)); }
+.table { overflow: visible; }
+.csecs { position: absolute; bottom: -2%; left: 50%; transform: translateX(-50%); background: var(--bg); border-radius: 99px; padding: 0 10px; z-index: 4; font-size: clamp(16px, 4.6vw, 22px); }
+.csecs:empty { display: none; }
+.csecs.crit { animation: thumpx .5s ease-in-out infinite; }
+@keyframes thumpx { 50% { transform: translateX(-50%) scale(1.25) } }

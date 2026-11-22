@@ -85,6 +85,20 @@
     tick() { beep(880, 0.05, 'square', 0.04); },
     lose() { [392, 330, 262].forEach((n, i) => beep(n, 0.25, 'triangle', 0.15, i * 0.15)); },
     turn() { beep(660, 0.12, 'sine', 0.12); beep(990, 0.15, 'sine', 0.12, 0.1); },
+    growl(v) {
+      if (muted) return;
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        const t0 = actx.currentTime, dur = 0.5 + v * 0.4;
+        const o = actx.createOscillator(), lfo = actx.createOscillator(), lg = actx.createGain(), g = actx.createGain();
+        o.type = 'sawtooth'; o.frequency.setValueAtTime(90, t0); o.frequency.linearRampToValueAtTime(60, t0 + dur);
+        lfo.frequency.value = 28; lg.gain.value = 25; lfo.connect(lg).connect(o.frequency);
+        g.gain.setValueAtTime(0.001, t0); g.gain.linearRampToValueAtTime(0.12 * v, t0 + 0.08); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+        o.connect(g).connect(actx.destination); o.start(t0); lfo.start(t0); o.stop(t0 + dur); lfo.stop(t0 + dur);
+      } catch {}
+    },
+    slash() { beep(1200, 0.08, 'sawtooth', 0.08); beep(900, 0.08, 'sawtooth', 0.08, 0.07); beep(700, 0.1, 'sawtooth', 0.08, 0.14); },
+    chomp() { beep(140, 0.12, 'square', 0.12); beep(110, 0.15, 'square', 0.12, 0.12); },
     win() { [523, 659, 784, 1047, 784, 1047].forEach((n, i) => beep(n, 0.2, 'triangle', 0.14, i * 0.12)); },
   };
 
@@ -170,8 +184,8 @@
       if (m.answer.tier === 'l') toast(`🌟 Legendariskt! ”${m.answer.text}”`, 'good');
     } else if (m.kind === 'lifeLost') {
       sfx.lose();
-      seatFx(m.pid, 'hit', '💔');
-      bigHeart(m.pid);
+      if (table && table.tiger) { tigerAttack(m.pid); setTimeout(() => bigHeart(m.pid), 1500); }
+      else { seatFx(m.pid, 'hit', '💔'); bigHeart(m.pid); }
       if (m.pid === me && navigator.vibrate) navigator.vibrate([100, 60, 100]);
     }
   }
@@ -353,11 +367,12 @@
     });
     const timerRing = svgRing();
     const pointer = h('div', { class: 'pointer' }, h('div', { class: 'arrow' }));
-    const center = h('div', { class: 'tcenter' },
-      h('div', { class: 'cemoji' }), h('div', { class: 'cname' }), h('div', { class: 'csecs' }));
+    const tiger = buildTiger();
+    const center = h('div', { class: 'tcenter' }, tiger, h('div', { class: 'csecs' }));
     const tbl = h('div', { class: 'table' }, timerRing.el, pointer, center);
     ring.prepend(tbl);
-    return { key: order.map((p) => p.id).join(','), el: ring, seats, pointer, center, timerRing };
+    const banner = h('div', { class: 'catbanner' }, h('span', { class: 'cemoji' }), h('span', { class: 'cname' }));
+    return { key: order.map((p) => p.id).join(','), el: ring, seats, pointer, center, timerRing, tiger, banner };
   }
 
   function svgRing() {
@@ -387,6 +402,7 @@
           h('button', { class: 'btn small secondary', onclick: () => { if (confirmLeave()) leaveRoom(); } }, '← Lämna'),
           h('span', { id: 'roundlbl' }),
           soundBtn()),
+        table.banner,
         table.el,
         h('div', { class: 'turnline', id: 'turnline' }),
         h('div', { id: 'bottom' }),
@@ -401,7 +417,7 @@
       shownRound = r.num;
       shownAnswers = 0;
       document.getElementById('feed').replaceChildren();
-      const c = table.center;
+      const c = table.banner;
       c.querySelector('.cemoji').textContent = r.category.emoji;
       c.querySelector('.cname').textContent = r.category.name;
       c.classList.remove('flip'); void c.offsetWidth; c.classList.add('flip');
@@ -434,6 +450,7 @@
       }
       pointerAngle = target;
       table.pointer.style.transform = `translate(-50%, -50%) rotate(${target}deg)`;
+      tigerLook(seat.angle);
     }
 
     // Raden under bordet
@@ -524,6 +541,115 @@
       return h('span', { class: 'heart' + (alive ? '' : ' gone') + (justLost ? ' breaking' : '') }, alive ? '❤️' : justLost ? '💔' : '🖤');
     }));
     s.lives = p.lives;
+  }
+
+  // ---------- Tigern ----------
+  // Egenritad tiger i SVG. Humöret styrs med data-mood: calm, alert, angry, furious.
+  const TIGER_SVG = `
+<svg viewBox="0 0 200 200" class="tiger-svg" aria-hidden="true">
+  <g class="ears">
+    <circle cx="52" cy="52" r="26" class="fur"/><circle cx="52" cy="54" r="14" fill="#ffb3a7"/>
+    <circle cx="148" cy="52" r="26" class="fur"/><circle cx="148" cy="54" r="14" fill="#ffb3a7"/>
+  </g>
+  <ellipse cx="100" cy="108" rx="78" ry="72" class="fur head"/>
+  <g class="stripes" fill="#2b1a10">
+    <path d="M100 38 q-6 14 0 26 q6 -12 0 -26z"/>
+    <path d="M78 42 q-2 12 6 20 q0 -12 -6 -20z"/><path d="M122 42 q2 12 -6 20 q0 -12 6 -20z"/>
+    <path d="M24 98 q16 2 26 10 q-14 2 -26 -10z"/><path d="M22 120 q16 0 26 6 q-14 4 -26 -6z"/>
+    <path d="M176 98 q-16 2 -26 10 q14 2 26 -10z"/><path d="M178 120 q-16 0 -26 6 q14 4 26 -6z"/>
+  </g>
+  <ellipse cx="72" cy="142" rx="32" ry="26" fill="#fff6e8"/><ellipse cx="128" cy="142" rx="32" ry="26" fill="#fff6e8"/>
+  <ellipse cx="100" cy="160" rx="22" ry="16" fill="#fff6e8"/>
+  <g class="eyes">
+    <g class="eye eye-l"><ellipse cx="72" cy="100" rx="15" ry="16" fill="#fff"/><g class="pupil"><circle cx="72" cy="101" r="8" class="iris"/><circle cx="75" cy="98" r="2.6" fill="#fff"/></g></g>
+    <g class="eye eye-r"><ellipse cx="128" cy="100" rx="15" ry="16" fill="#fff"/><g class="pupil"><circle cx="128" cy="101" r="8" class="iris"/><circle cx="131" cy="98" r="2.6" fill="#fff"/></g></g>
+    <path class="lid lid-l" d="M55 84 h34 v18 h-34z"/><path class="lid lid-r" d="M111 84 h34 v18 h-34z"/>
+  </g>
+  <path class="brow brow-l" d="M56 80 q16 -6 30 0" />
+  <path class="brow brow-r" d="M114 80 q14 -6 30 0" />
+  <path d="M90 128 h20 q0 10 -10 13 q-10 -3 -10 -13z" fill="#e8637a"/>
+  <g class="mouth-closed"><path d="M100 141 v8 M100 149 q-10 9 -20 2 M100 149 q10 9 20 2" /></g>
+  <g class="mouth-open">
+    <path d="M78 150 q22 -6 44 0 q-4 26 -22 26 q-18 0 -22 -26z" fill="#5a0f1a"/>
+    <path d="M80 151 l5 12 l5 -11z M120 151 l-5 12 l-5 -11z" fill="#fff"/>
+    <path d="M90 170 q10 -6 20 0 q-4 6 -10 6 q-6 0 -10 -6z" fill="#e8637a"/>
+  </g>
+  <g class="whiskers"><path d="M58 146 l-36 -6 M58 154 l-34 4 M142 146 l36 -6 M142 154 l34 4"/></g>
+</svg>`;
+
+  function buildTiger() {
+    const el = h('div', { class: 'tiger', 'data-mood': 'calm' });
+    el.innerHTML = TIGER_SVG; // statisk egen grafik
+    el.append(h('div', { class: 'tiger-steam' }, h('i'), h('i')));
+    return el;
+  }
+
+  const MOOD_ORDER = ['calm', 'alert', 'angry', 'furious'];
+  function setTigerMood(mood) {
+    const t = table && table.tiger;
+    if (!t || t.dataset.mood === mood || t.classList.contains('attacking')) return;
+    const up = MOOD_ORDER.indexOf(mood) > MOOD_ORDER.indexOf(t.dataset.mood);
+    t.dataset.mood = mood;
+    if (up && mood === 'angry') sfx.growl(0.6);
+    if (up && mood === 'furious') sfx.growl(1);
+  }
+
+  // Tigern tittar mot den som har turen
+  function tigerLook(angle) {
+    const t = table && table.tiger;
+    if (!t) return;
+    const rad = (angle * Math.PI) / 180;
+    const dx = (Math.cos(rad) * 5).toFixed(1), dy = (Math.sin(rad) * 4).toFixed(1);
+    t.querySelectorAll('.pupil').forEach((p) => p.setAttribute('transform', `translate(${dx} ${dy})`));
+  }
+
+  // Tigern hoppar på spelaren, river och tar ett hjärta
+  function tigerAttack(pid) {
+    const s = table && table.seats.get(pid);
+    const t = table && table.tiger;
+    if (!s || !t || !t.animate) return;
+    const tr = t.getBoundingClientRect();
+    const sr = s.el.querySelector('.blob').getBoundingClientRect();
+    const dx = (sr.left + sr.width / 2) - (tr.left + tr.width / 2);
+    const dy = (sr.top + sr.height / 2) - (tr.top + tr.height / 2);
+    t.classList.add('attacking');
+    t.dataset.mood = 'furious';
+    sfx.growl(1.2);
+    const jump = t.animate([
+      { transform: 'translate(0,0) scale(1)' },
+      { transform: `translate(${-dx * 0.12}px, ${-dy * 0.12}px) scale(0.9)`, offset: 0.18 },
+      { transform: `translate(${dx * 0.72}px, ${dy * 0.72}px) scale(1.35) rotate(${dx > 0 ? 10 : -10}deg)`, offset: 0.42 },
+      { transform: `translate(${dx * 0.66}px, ${dy * 0.66}px) scale(1.3)`, offset: 0.62 },
+      { transform: 'translate(0,0) scale(1)' },
+    ], { duration: 1700, easing: 'cubic-bezier(.3,.7,.4,1)' });
+    // Klösmärken över spelaren
+    setTimeout(() => {
+      const claw = h('div', { class: 'claw' }, h('i'), h('i'), h('i'));
+      s.el.append(claw);
+      setTimeout(() => claw.remove(), 900);
+      sfx.slash();
+      seatFx(pid, 'hit');
+    }, 650);
+    // Hjärtat flyger från spelaren till tigern
+    setTimeout(() => {
+      const wrap = table.el.getBoundingClientRect();
+      const from = s.el.querySelector('.hearts').getBoundingClientRect();
+      const heart = h('div', { class: 'stolen-heart' }, '❤️');
+      heart.style.left = (from.left + from.width / 2 - wrap.left) + 'px';
+      heart.style.top = (from.top - wrap.top) + 'px';
+      table.el.append(heart);
+      const tx = tr.left + tr.width / 2 - wrap.left - (from.left + from.width / 2 - wrap.left);
+      const ty = tr.top + tr.height * 0.75 - wrap.top - (from.top - wrap.top);
+      heart.animate([
+        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
+        { transform: `translate(calc(-50% + ${tx * 0.5}px), calc(-50% + ${ty * 0.5 - 40}px)) scale(2)`, opacity: 1, offset: 0.5 },
+        { transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(0.6)`, opacity: 0.9 },
+      ], { duration: 900, easing: 'ease-in-out', fill: 'forwards' });
+      setTimeout(() => { heart.remove(); t.classList.add('chomp'); sfx.chomp(); }, 900);
+    }, 900);
+    jump.onfinish = () => {
+      setTimeout(() => { t.classList.remove('attacking', 'chomp'); t.dataset.mood = 'calm'; }, 600);
+    };
   }
 
   // Pratbubbla vid en spelares plats
@@ -637,6 +763,7 @@
       const frac = Math.min(1, left / (r.turnTime * 1000));
       ring.fg.style.strokeDashoffset = ring.len * (1 - frac);
       const cls = left < 3000 ? 'crit' : left < 6000 ? 'warn' : '';
+      setTigerMood(frac > 0.6 ? 'calm' : frac > 0.35 ? 'alert' : frac > 0.15 ? 'angry' : 'furious');
       if (ring.el.dataset.c !== cls) { ring.el.dataset.c = cls; ring.el.setAttribute('class', 'tring ' + cls); }
       const s = Math.ceil(left / 1000);
       const txt = s + '';
@@ -644,6 +771,7 @@
       if (s <= 3 && s > 0 && s !== lastTickSec && r.turnPid === me) sfx.tick();
       lastTickSec = s;
     } else if (state.phase !== 'vote') {
+      if (state.phase !== 'roundEnd') setTigerMood('calm');
       ring.fg.style.strokeDashoffset = ring.len;
       if (secsEl.textContent) secsEl.textContent = '';
     }
