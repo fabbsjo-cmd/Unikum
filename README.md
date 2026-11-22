@@ -11,7 +11,7 @@
 5. Hinner du inte svara tappar du ett av dina liv och en ny kategori kommer. Sist kvar med liv vinner.
 6. Skriver någon ett ord som inte finns i ordlistan röstar de andra om det godkänns. Godkända ord sparas och räknas som giltiga nästa gång.
 
-Värden kan ställa in tid per tur, antal liv, vilka kategoripaket som används, tempoökning och strikt läge (bara ordlistan, ingen röstning).
+Värden kan ställa in tid per tur, antal liv, vilka kategoripaket som används, tempoökning, strikt läge (bara ordlistan, ingen röstning), extraliv vid en poänggräns (300/500/700/1000 p) och powerupen "Skicka turen" som man kan välja i stället för extralivet.
 
 Sällsyntheten börjar från en handskriven bedömning och justeras automatiskt efter hur ofta ord faktiskt används när ni spelar.
 

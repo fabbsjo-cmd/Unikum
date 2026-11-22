@@ -77,7 +77,7 @@ const AVATARS = ['🐙', '🦊', '🐸', '🐼', '🦄', '🐯', '🐨', '🐵',
 const COLORS = ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#38d9a9', '#4dabf7', '#9775fa', '#f783ac'];
 
 function defaultSettings() {
-  return { turnTime: 15, lives: 3, strict: false, speedup: true, packs: { teman: true, lander: true, djur: true, orter: true } };
+  return { turnTime: 15, lives: 3, strict: false, speedup: true, lifeEvery: 500, powerups: true, packs: { teman: true, lander: true, djur: true, orter: true } };
 }
 
 function createRoom() {
@@ -108,7 +108,7 @@ function publicState(room) {
     settings: room.settings,
     winnerId: room.winnerId,
     players: room.players.map((p) => ({
-      id: p.id, name: p.name, avatar: p.avatar, color: p.color, lives: p.lives, score: p.score,
+      id: p.id, name: p.name, avatar: p.avatar, color: p.color, lives: p.lives, score: p.score, passes: p.passes || 0, rewards: p.rewards || 0,
       alive: p.alive, connected: p.connected, spectator: p.spectator, best: p.best, answers: p.answerCount,
     })),
     round: r && {
@@ -179,6 +179,8 @@ function startGame(room) {
     p.score = 0;
     p.best = null;
     p.answerCount = 0;
+    p.passes = 0;
+    p.rewards = 0;
   }
   room.winnerId = null;
   room.lastRound = null;
@@ -299,12 +301,55 @@ function accept(room, p, display, entry, tier, unknown) {
   if (!entry) r.unknownKeys.push(key(display));
   const ans = { pid: p.id, text: display, tier, tierName: info.name, points: info.points, unknown: !!unknown };
   r.answers.push(ans);
+  const before = p.score;
   p.score += info.points;
   p.answerCount = (p.answerCount || 0) + 1;
+  milestones(room, p, before);
   if (!p.best || TIERS.indexOf(tier) > TIERS.indexOf(p.best.tier)) p.best = { text: display, tier, tierName: info.name };
   event(room, { kind: 'accepted', answer: ans });
   const next = nextPlayerAfter(room, p.id) || p;
   beginTurn(room, next.id);
+}
+
+// Belöning när en spelare passerar en poänggräns (t.ex. var 500:e poäng)
+const MAX_LIVES = 9;
+function milestones(room, p, before) {
+  const step = room.settings.lifeEvery;
+  if (!step) return;
+  const n = Math.floor(p.score / step) - Math.floor(before / step);
+  for (let i = 0; i < n; i++) {
+    if (room.settings.powerups) {
+      p.rewards = (p.rewards || 0) + 1; // spelaren väljer själv: liv eller skicka turen
+      send(p.ws, { t: 'event', kind: 'rewardReady', score: Math.floor(p.score / step) * step });
+    } else {
+      p.lives = Math.min(MAX_LIVES, p.lives + 1);
+      event(room, { kind: 'extraLife', pid: p.id });
+    }
+  }
+}
+
+function claimReward(room, p, choice) {
+  if (!p.rewards || !p.alive) return;
+  if (room.phase === 'lobby' || room.phase === 'gameOver') return;
+  p.rewards--;
+  if (choice === 'pass') {
+    p.passes = (p.passes || 0) + 1;
+    event(room, { kind: 'gotPass', pid: p.id });
+  } else {
+    p.lives = Math.min(MAX_LIVES, p.lives + 1);
+    event(room, { kind: 'extraLife', pid: p.id });
+  }
+  sync(room);
+}
+
+// Powerup: skicka turen vidare till valfri spelare
+function passTurn(room, p, targetId) {
+  if (room.phase !== 'turn' || room.round.turnPid !== p.id || !(p.passes > 0)) return;
+  const target = room.players.find((q) => q.id === targetId);
+  if (!target || target === p || !target.alive || !target.connected) return;
+  p.passes--;
+  event(room, { kind: 'passed', from: p.id, to: target.id });
+  beginTurn(room, target.id);
 }
 
 function handleAnswer(room, p, raw) {
@@ -463,6 +508,8 @@ function sanitizeSettings(s, cur) {
   if (Number.isInteger(s.lives) && s.lives >= 1 && s.lives <= 5) out.lives = s.lives;
   if (typeof s.strict === 'boolean') out.strict = s.strict;
   if (typeof s.speedup === 'boolean') out.speedup = s.speedup;
+  if ([0, 300, 500, 700, 1000].includes(s.lifeEvery)) out.lifeEvery = s.lifeEvery;
+  if (typeof s.powerups === 'boolean') out.powerups = s.powerups;
   if (s.packs) for (const k of Object.keys(out.packs)) if (typeof s.packs[k] === 'boolean') out.packs[k] = s.packs[k];
   if (!Object.values(out.packs).some(Boolean)) out.packs.teman = true;
   return out;
@@ -526,6 +573,12 @@ function onMessage(ws, msg) {
     case 'leave':
       ws.room = null; ws.player = null;
       leave(room, p, true);
+      break;
+    case 'reward':
+      claimReward(room, p, msg.choice === 'pass' ? 'pass' : 'life');
+      break;
+    case 'pass':
+      passTurn(room, p, msg.target);
       break;
     case 'react':
       if (typeof msg.emoji === 'string' && ['👏', '😂', '😮', '🔥', '💀', '🤯'].includes(msg.emoji)) {
