@@ -162,16 +162,15 @@
       sfx.reject();
       const box = document.querySelector('.answerbox form');
       if (box) { box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake'); }
-      const inp = document.getElementById('answer');
-      if (inp) inp.select();
     } else if (m.kind === 'rejectOther') {
-      const p = player(m.pid);
-      if (p) toast(`${p.name}: ${m.msg}`);
+      seatBubble(m.pid, '✗ ' + m.msg, 'bad');
     } else if (m.kind === 'accepted') {
       sfx.accept(m.answer.tier);
+      seatBubble(m.answer.pid, m.answer.text, 'ok ' + m.answer.tier, m.answer);
       if (m.answer.tier === 'l') toast(`🌟 Legendariskt! ”${m.answer.text}”`, 'good');
     } else if (m.kind === 'lifeLost') {
       sfx.lose();
+      seatFx(m.pid, 'hit', '💔');
       if (m.pid === me && navigator.vibrate) navigator.vibrate([100, 60, 100]);
     }
   }
@@ -186,7 +185,7 @@
   }
 
   function renderHome() {
-    renderedKey = 'home';
+    renderedKey = 'home'; table = null;
     const nameInput = h('input', { class: 'input', id: 'name', maxlength: 16, placeholder: 'Ditt namn', value: profile.name, autocomplete: 'nickname' });
     const codeInput = h('input', { class: 'input code-input', id: 'code', maxlength: 4, placeholder: 'KOD', value: urlCode || '', autocomplete: 'off', autocapitalize: 'characters' });
     const avatars = h('div', { class: 'avatars' }, AVATARS.map((a) => h('button', {
@@ -244,7 +243,7 @@
   }
 
   function renderLobby() {
-    renderedKey = 'lobby';
+    renderedKey = 'lobby'; table = null;
     const s = state.settings;
     const host = isHost();
     const link = `${location.origin}/?rum=${state.code}`;
@@ -310,72 +309,216 @@
     return '❤️'.repeat(p.lives) + '🖤'.repeat(Math.max(0, total - p.lives));
   }
 
-  // Spelvyn byggs om när fas/tur ändras; timer och skrivande uppdateras löpande.
+  // ---------- Spelbordet ----------
+  // Bordet byggs en gång per spelaruppsättning och uppdateras sedan bit för bit,
+  // så att animationerna inte startar om vid varje uppdatering.
+  let table = null; // { key, el, seats: Map(pid -> {el, angle}), pointer, ... }
+  let pointerAngle = null;
+  let shownAnswers = 0;
+  let shownRound = null;
+  let bottomKey = '';
+  let overlayKey = '';
+
+  function seatOrder() {
+    const list = state.players.filter((p) => !p.spectator || p.id === me);
+    const idx = list.findIndex((p) => p.id === me);
+    return idx > 0 ? [...list.slice(idx), ...list.slice(0, idx)] : list;
+  }
+
+  function buildTable() {
+    const order = seatOrder();
+    const n = order.length;
+    const seats = new Map();
+    const ring = h('div', { class: 'tablewrap' });
+    const R = n <= 2 ? 38 : n <= 4 ? 40 : 41;
+    order.forEach((p, i) => {
+      const angle = 90 + (i * 360) / n; // du sitter längst ner
+      const rad = (angle * Math.PI) / 180;
+      const x = 50 + R * Math.cos(rad);
+      const y = 50 + R * Math.sin(rad);
+      const below = Math.sin(rad) < -0.3; // övre platser visar bubblan under sig
+      const side = x < 30 ? ' left' : x > 70 ? ' right' : '';
+      const bubble = h('div', { class: 'sbubble' + (below ? ' below' : '') + side });
+      const el = h('div', { class: 'seat2', 'data-pid': p.id, style: `left:${x}%;top:${y}%` },
+        h('div', { class: 'spot' }),
+        h('div', { class: 'blob', style: `--c:${p.color}` }, h('span', { class: 'face' }, p.avatar)),
+        h('div', { class: 'tag' }, h('span', { class: 'nm' }), h('span', { class: 'hearts' })),
+        h('div', { class: 'pts' }),
+        bubble);
+      seats.set(p.id, { el, angle, bubble, pos: (below ? ' below' : '') + side });
+      ring.append(el);
+    });
+    const timerRing = svgRing();
+    const pointer = h('div', { class: 'pointer' }, h('div', { class: 'arrow' }));
+    const center = h('div', { class: 'tcenter' },
+      h('div', { class: 'cemoji' }), h('div', { class: 'cname' }), h('div', { class: 'csecs' }));
+    const tbl = h('div', { class: 'table' }, timerRing.el, pointer, center);
+    ring.prepend(tbl);
+    return { key: order.map((p) => p.id).join(','), el: ring, seats, pointer, center, timerRing };
+  }
+
+  function svgRing() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('class', 'tring');
+    const mk = (cls) => { const c = document.createElementNS(NS, 'circle'); c.setAttribute('cx', 50); c.setAttribute('cy', 50); c.setAttribute('r', 47); c.setAttribute('class', cls); svg.append(c); return c; };
+    mk('bg');
+    const fg = mk('fg');
+    const len = 2 * Math.PI * 47;
+    fg.style.strokeDasharray = len;
+    return { el: svg, fg, len };
+  }
+
   function renderGame() {
     const r = state.round;
     const myTurn = state.phase === 'turn' && r.turnPid === me;
-    const key = ['game', state.phase, r.num, r.turnPid, r.answers.length, myTurn, JSON.stringify(state.players.map((p) => [p.lives, p.connected, p.alive, p.score])), r.vote && JSON.stringify(r.vote.votes)].join('|');
-    if (key === renderedKey) return;
-    renderedKey = key;
-    const prevInput = document.getElementById('answer');
-    const keepValue = prevInput && myTurn ? prevInput.value : '';
-    const cur = player(r.turnPid);
-
-    const seats = h('div', { class: 'ring' }, state.players.filter((p) => !p.spectator || p.connected).map((p) =>
-      h('div', { class: 'seat' + (p.id === r.turnPid && ['turn', 'vote'].includes(state.phase) ? ' turn' : '') + (p.alive ? '' : ' dead') + (p.connected ? '' : ' off'), 'data-pid': p.id },
-        av(p),
-        h('div', { class: 'nm' }, p.id === me ? 'Du' : p.name),
-        h('div', { class: 'hearts' }, hearts(p)),
-        h('div', { class: 'pts' }, p.score + ' p'))));
-
-    const feed = h('div', { class: 'feed' }, [...r.answers].reverse().map((a) => {
-      const p = player(a.pid) || { color: '#666', avatar: '❔' };
-      return h('div', { class: 'ans' }, av(p), h('div', { class: 'w' }, a.text, a.unknown ? h('span', { class: 'new' }, 'NYTT ORD') : null),
-        h('span', { class: 'tier ' + a.tier }, a.tierName, h('span', { class: 'p' }, '+' + a.points)));
-    }));
-
-    let bottom;
-    if (myTurn) {
-      const inp = h('input', { class: 'input', id: 'answer', maxlength: 40, placeholder: 'Skriv ditt svar…', autocomplete: 'off', autocorrect: 'off', autocapitalize: 'none', spellcheck: 'false', enterkeyhint: 'send', value: keepValue });
-      let lastSent = 0;
-      inp.addEventListener('input', () => {
-        const t = Date.now();
-        if (t - lastSent > 120) { lastSent = t; sendMsg({ t: 'typing', text: inp.value }); }
-        else setTimeout(() => sendMsg({ t: 'typing', text: inp.value }), 130);
-      });
-      bottom = h('div', { class: 'answerbox' }, h('form', { onsubmit: (e) => { e.preventDefault(); if (inp.value.trim()) sendMsg({ t: 'answer', text: inp.value }); } },
-        h('div', { class: 'grow', style: 'flex:1' }, inp), h('button', { class: 'btn', type: 'submit' }, 'Skicka')));
-    } else {
-      bottom = h('div', { class: 'reacts' }, REACTS.map((e) => h('button', { onclick: () => sendMsg({ t: 'react', emoji: e }), 'aria-label': 'Reagera ' + e }, e)));
+    const order = seatOrder();
+    const tkey = order.map((p) => p.id).join(',');
+    if (renderedKey !== 'game' || !table || table.key !== tkey || !document.body.contains(table.el)) {
+      renderedKey = 'game';
+      table = buildTable();
+      shownAnswers = 0; shownRound = null; bottomKey = ''; overlayKey = ''; pointerAngle = null;
+      app.replaceChildren(
+        h('div', { class: 'topbar' },
+          h('button', { class: 'btn small secondary', onclick: () => { if (confirmLeave()) leaveRoom(); } }, '← Lämna'),
+          h('span', { id: 'roundlbl' }),
+          soundBtn()),
+        table.el,
+        h('div', { class: 'turnline', id: 'turnline' }),
+        h('div', { id: 'bottom' }),
+        h('div', { class: 'feed', id: 'feed' }),
+        h('div', { id: 'overlay' }));
     }
-
     const meP = player(me);
-    const turnLine = h('div', { class: 'turnline', id: 'turnline' });
-    if (state.phase === 'turn' || state.phase === 'vote') {
-      turnLine.append(myTurn ? 'Din tur!' : state.phase === 'vote' ? `Röstning om ${cur ? cur.name : ''}s ord…` : `${cur ? cur.name : ''}s tur`, h('span', { class: 'secs', id: 'secs' }));
+    document.getElementById('roundlbl').textContent = `Runda ${r.num}` + (meP && meP.spectator ? ' · Du tittar på' : '');
+
+    // Kategori i mitten, vänds vid ny runda
+    if (shownRound !== r.num) {
+      shownRound = r.num;
+      shownAnswers = 0;
+      document.getElementById('feed').replaceChildren();
+      const c = table.center;
+      c.querySelector('.cemoji').textContent = r.category.emoji;
+      c.querySelector('.cname').textContent = r.category.name;
+      c.classList.remove('flip'); void c.offsetWidth; c.classList.add('flip');
+      for (const s of table.seats.values()) { s.bubble.className = s.bubble.className.replace(/ show.*$/, ''); }
     }
 
-    app.replaceChildren(
-      h('div', { class: 'topbar' },
-        h('button', { class: 'btn small secondary', onclick: () => { if (confirmLeave()) leaveRoom(); } }, '← Lämna'),
-        h('span', null, `Runda ${r.num}`, meP && meP.spectator ? ' · Du tittar på' : ''),
-        soundBtn()),
-      h('div', { class: 'category' },
-        h('div', { class: 'emoji' }, r.category.emoji),
-        h('h2', null, r.category.name),
-        h('div', { class: 'sub' }, `${r.answers.length} svar hittills`)),
-      seats,
-      h('div', { class: 'timer', id: 'timer' }, h('div')),
-      turnLine,
-      h('div', { class: 'typing', id: 'typing' }),
-      bottom,
-      feed,
-      ...[overlayFor()].filter(Boolean),
-    );
+    // Platser
+    const active = ['turn', 'vote'].includes(state.phase) ? r.turnPid : null;
+    for (const [pid, s] of table.seats) {
+      const p = player(pid);
+      if (!p) continue;
+      s.el.classList.toggle('turn', pid === active);
+      s.el.classList.toggle('dead', !p.alive && !p.spectator);
+      s.el.classList.toggle('off', !p.connected);
+      s.el.classList.toggle('me', pid === me);
+      s.el.querySelector('.nm').textContent = pid === me ? 'Du' : p.name;
+      s.el.querySelector('.hearts').textContent = hearts(p);
+      const pts = s.el.querySelector('.pts');
+      if (pts.textContent !== p.score + ' p') pts.textContent = p.score + ' p';
+    }
+
+    // Pilen i mitten pekar på den som har turen
+    const seat = active && table.seats.get(active);
+    table.pointer.classList.toggle('on', !!seat);
+    if (seat) {
+      let target = seat.angle;
+      if (pointerAngle != null) {
+        let d = ((target - pointerAngle) % 360 + 540) % 360 - 180;
+        target = pointerAngle + d;
+      }
+      pointerAngle = target;
+      table.pointer.style.transform = `translate(-50%, -50%) rotate(${target}deg)`;
+    }
+
+    // Raden under bordet
+    const cur = player(r.turnPid);
+    const tl = document.getElementById('turnline');
+    tl.className = 'turnline' + (myTurn ? ' mine' : '');
+    tl.textContent = state.phase === 'turn' ? (myTurn ? '✨ Din tur! ✨' : `${cur ? cur.name : ''} tänker…`)
+      : state.phase === 'vote' ? 'Röstning pågår…' : state.phase === 'countdown' ? 'Gör er redo!' : '';
+
+    // Svarsfält eller reaktioner
+    const bkey = myTurn ? 'input' : 'reacts';
+    if (bkey !== bottomKey) {
+      bottomKey = bkey;
+      const bottom = document.getElementById('bottom');
+      if (myTurn) {
+        const inp = h('input', { class: 'input', id: 'answer', maxlength: 40, placeholder: 'Skriv ditt svar…', autocomplete: 'off', autocorrect: 'off', autocapitalize: 'none', spellcheck: 'false', enterkeyhint: 'send' });
+        let lastSent = 0;
+        inp.addEventListener('input', () => {
+          const t = Date.now();
+          if (t - lastSent > 120) { lastSent = t; sendMsg({ t: 'typing', text: inp.value }); }
+          else setTimeout(() => sendMsg({ t: 'typing', text: inp.value }), 130);
+        });
+        bottom.replaceChildren(h('div', { class: 'answerbox' }, h('form', { onsubmit: (e) => {
+          e.preventDefault();
+          const v = inp.value.trim();
+          if (!v) return;
+          sendMsg({ t: 'answer', text: v });
+          inp.value = ''; // töm direkt, oavsett rätt eller fel
+          sendMsg({ t: 'typing', text: '' });
+          inp.focus();
+        } }, h('div', { style: 'flex:1' }, inp), h('button', { class: 'btn', type: 'submit' }, 'Skicka'))));
+        inp.focus({ preventScroll: true });
+      } else {
+        bottom.replaceChildren(h('div', { class: 'reacts' }, REACTS.map((e) => h('button', { onclick: () => sendMsg({ t: 'react', emoji: e }), 'aria-label': 'Reagera ' + e }, e))));
+      }
+    } else if (myTurn) {
+      const inp = document.getElementById('answer');
+      if (inp && document.activeElement !== inp) inp.focus({ preventScroll: true });
+    }
+
+    // Svarslistan: lägg bara till nya svar
+    const feed = document.getElementById('feed');
+    for (let i = shownAnswers; i < r.answers.length; i++) {
+      const a = r.answers[i];
+      const p = player(a.pid) || { color: '#666', avatar: '❔' };
+      feed.prepend(h('div', { class: 'ans' }, av(p), h('div', { class: 'w' }, a.text, a.unknown ? h('span', { class: 'new' }, 'NYTT ORD') : null),
+        h('span', { class: 'tier ' + a.tier }, a.tierName, h('span', { class: 'p' }, '+' + a.points))));
+    }
+    shownAnswers = r.answers.length;
+
+    // Överlägg (nedräkning, röstning, rundslut)
+    const okey = [state.phase, r.num, r.vote && JSON.stringify(r.vote.votes)].join('|');
+    if (okey !== overlayKey) {
+      overlayKey = okey;
+      const ov = overlayFor();
+      document.getElementById('overlay').replaceChildren(...(ov ? [ov] : []));
+    }
     updateTyping();
     tickTimer();
-    const inp = document.getElementById('answer');
-    if (inp && !inp.matches(':focus')) { inp.focus({ preventScroll: true }); }
+  }
+
+  // Pratbubbla vid en spelares plats
+  function seatBubble(pid, text, kind, answer) {
+    const s = table && table.seats.get(pid);
+    if (!s) return;
+    const b = s.bubble;
+    clearTimeout(s.hideT);
+    b.replaceChildren(text, ...(answer ? [h('span', { class: 'btier' }, answer.tierName + ' +' + answer.points)] : []));
+    b.className = 'sbubble' + s.pos + ' show ' + kind;
+    void b.offsetWidth;
+    if (answer) {
+      const f = h('div', { class: 'floatpts ' + answer.tier }, '+' + answer.points);
+      s.el.append(f);
+      setTimeout(() => f.remove(), 1400);
+      s.el.classList.remove('cheer'); void s.el.offsetWidth; s.el.classList.add('cheer');
+    }
+    s.hideT = setTimeout(() => { b.className = b.className.replace(/ show.*$/, ''); }, answer ? 1800 : 1400);
+  }
+
+  function seatFx(pid, cls, emoji) {
+    const s = table && table.seats.get(pid);
+    if (!s) return;
+    s.el.classList.remove(cls); void s.el.offsetWidth; s.el.classList.add(cls);
+    if (emoji) {
+      const f = h('div', { class: 'floatpts big' }, emoji);
+      s.el.append(f);
+      setTimeout(() => f.remove(), 1500);
+    }
   }
 
   let leaveArmed = 0;
@@ -391,7 +534,7 @@
     if (state.phase === 'countdown') {
       return h('div', { class: 'overlay' }, h('div', { class: 'modal' },
         h('p', { class: 'label' }, `Runda ${r.num} · Ny kategori`),
-        h('div', { class: 'big' }, r.category.emoji),
+        h('div', { class: 'big spin' }, r.category.emoji),
         h('h2', null, r.category.name),
         h('div', { class: 'countnum', id: 'countdown' }, ''),
         h('p', { class: 'muted' }, `Först ut: ${player(r.turnPid)?.id === me ? 'du!' : player(r.turnPid)?.name || ''}`)));
@@ -417,7 +560,7 @@
       const lr = state.lastRound;
       const p = player(lr.loserPid);
       const you = lr.loserPid === me;
-      return h('div', { class: 'overlay' }, h('div', { class: 'modal' },
+      return h('div', { class: 'overlay delayed' }, h('div', { class: 'modal' },
         h('div', { class: 'big' }, lr.out ? '💀' : '💔'),
         h('h2', null, you ? (lr.out ? 'Du är ute!' : 'Du tappade ett liv!') : `${p ? p.name : 'Någon'} ${lr.out ? 'är ute!' : 'tappade ett liv!'}`),
         h('p', { class: 'muted' }, `Ni hittade ${lr.found} av ${lr.total} möjliga i ”${lr.category}”.`),
@@ -428,33 +571,39 @@
     return null;
   }
 
+  // Visar vad den som har turen skriver, i en bubbla vid deras plats
   function updateTyping() {
-    const el = document.getElementById('typing');
-    if (!el || !state || !state.round) return;
+    if (!table || !state || !state.round) return;
     const r = state.round;
-    if (state.phase === 'turn' && r.turnPid !== me && lastTypingPid === r.turnPid) {
-      el.replaceChildren(typingText, h('span', { class: 'caret' }));
-    } else if (state.phase === 'turn' && r.turnPid !== me) {
-      el.replaceChildren(h('span', { class: 'caret' }));
-    } else el.replaceChildren();
+    for (const [pid, s] of table.seats) {
+      let t = s.el.querySelector('.typingb');
+      const show = state.phase === 'turn' && pid === r.turnPid && pid !== me;
+      if (!show) { if (t) t.remove(); continue; }
+      if (!t) { t = h('div', { class: 'typingb' + s.pos }); s.el.append(t); }
+      const txt = lastTypingPid === pid ? typingText : '';
+      t.replaceChildren(txt ? txt : h('span', { class: 'dots' }, h('i'), h('i'), h('i')));
+    }
   }
 
   function tickTimer() {
-    if (!state || !state.round) return;
+    if (!state || !state.round || !table) return;
     const r = state.round;
-    const bar = document.getElementById('timer');
-    const secs = document.getElementById('secs');
-    if (bar && state.phase === 'turn' && r.deadline) {
+    const ring = table.timerRing;
+    const secsEl = table.center.querySelector('.csecs');
+    if (state.phase === 'turn' && r.deadline) {
       const left = Math.max(0, r.deadline - now());
       const frac = Math.min(1, left / (r.turnTime * 1000));
-      bar.firstChild.style.width = (frac * 100).toFixed(1) + '%';
-      bar.className = 'timer' + (left < 3000 ? ' crit' : left < 6000 ? ' warn' : '');
+      ring.fg.style.strokeDashoffset = ring.len * (1 - frac);
+      const cls = left < 3000 ? 'crit' : left < 6000 ? 'warn' : '';
+      if (ring.el.dataset.c !== cls) { ring.el.dataset.c = cls; ring.el.setAttribute('class', 'tring ' + cls); }
       const s = Math.ceil(left / 1000);
-      if (secs) secs.textContent = s + ' s';
+      const txt = s + '';
+      if (secsEl.textContent !== txt) { secsEl.textContent = txt; secsEl.className = 'csecs ' + cls; }
       if (s <= 3 && s > 0 && s !== lastTickSec && r.turnPid === me) sfx.tick();
       lastTickSec = s;
-    } else if (bar && state.phase !== 'turn') {
-      bar.firstChild.style.width = state.phase === 'vote' ? bar.firstChild.style.width : '0%';
+    } else if (state.phase !== 'vote') {
+      ring.fg.style.strokeDashoffset = ring.len;
+      if (secsEl.textContent) secsEl.textContent = '';
     }
     const vt = document.getElementById('votetimer');
     if (vt && r.vote) {
@@ -467,15 +616,15 @@
   (function loop() { tickTimer(); requestAnimationFrame(loop); })();
 
   function showReact(pid, emoji) {
-    const seat = document.querySelector(`.seat[data-pid="${pid}"]`);
-    if (!seat) return;
-    const b = h('div', { class: 'bubble' }, emoji);
-    seat.append(b);
+    const s = table && table.seats.get(pid);
+    if (!s) return;
+    const b = h('div', { class: 'reactpop' }, emoji);
+    s.el.append(b);
     setTimeout(() => b.remove(), 1700);
   }
 
   function renderOver() {
-    renderedKey = 'over';
+    renderedKey = 'over'; table = null;
     const sorted = [...state.players].filter((p) => !p.spectator).sort((a, b) => (b.id === state.winnerId) - (a.id === state.winnerId) || b.score - a.score);
     const w = player(state.winnerId);
     const solo = sorted.length === 1;

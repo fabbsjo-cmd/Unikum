@@ -33,4 +33,4 @@ Bra att veta om gratisnivån: tjänsten somnar efter cirka 15 minuter utan besö
 
 ## Lägga till kategorier
 
-Alla kategorier finns i `lib/data.js`. Svar skrivs kommaseparerade per nivå (`c` vanlig, `u` ovanlig, `r` sällsynt, `l` legendarisk), och alternativa stavningar med `/`, till exempel `Nederländerna/Holland`.
+Kategorierna finns i `lib/data.js` och `lib/data2.js`. Svar skrivs kommaseparerade per nivå (`c` vanlig, `u` ovanlig, `r` sällsynt, `l` legendarisk), och alternativa stavningar med `/`, till exempel `Nederländerna/Holland`.
