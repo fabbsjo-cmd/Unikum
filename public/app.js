@@ -238,25 +238,25 @@
     };
     const joining = urlCode && urlCode.length === 4;
     app.replaceChildren(
-      h('div', { class: 'blobs' }, '🐙', '🦊', '🐸', '🦄', '🐳'),
-      h('h1', { class: 'logo' }, 'Unikum'),
-      h('p', { class: 'tagline' }, 'Kom på ordet ingen annan tänker på'),
-      h('div', { class: 'card stack' },
-        h('div', null, h('p', { class: 'label' }, 'Vem är du?'), nameInput),
-        avatars,
+      h('div', { class: 'hud home' }, h('div', { class: 'hudrow' }, h('span'), soundBtn())),
+      wordmark(true),
+      h('div', { class: 'panel stack' },
+        h('div', null, h('p', { class: 'label' }, 'Ditt namn'), nameInput),
+        h('div', null, h('p', { class: 'label' }, 'Välj din figur'), avatars),
         joining
           ? h('div', { class: 'stack' },
             h('button', { class: 'btn block', onclick: () => go(false) }, `Gå med i rum ${urlCode}`),
             h('div', { class: 'divider' }, 'eller'),
-            h('button', { class: 'btn secondary block', onclick: () => go(true) }, 'Skapa ett nytt rum'))
+            h('button', { class: 'btn ghost block', onclick: () => go(true) }, 'Skapa ett nytt rum'))
           : h('div', { class: 'stack' },
             h('button', { class: 'btn block', onclick: () => go(true) }, 'Skapa rum'),
-            h('div', { class: 'divider' }, 'eller gå med'),
+            h('div', { class: 'divider' }, 'eller gå med med kod'),
             h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); go(false); } },
               h('div', { class: 'grow' }, codeInput),
-              h('button', { class: 'btn secondary', type: 'submit' }, 'Gå med'))),
+              h('button', { class: 'btn ghost', type: 'submit' }, 'Gå med'))),
       ),
-      h('div', { class: 'card', style: 'margin-top:14px' }, rulesList()),
+      h('div', { class: 'panel', style: 'margin-top:16px' }, rulesList()),
+      h('p', { class: 'footnote' }, 'Unikum · ett ordspel för 1–8 spelare'),
     );
     nameInput.addEventListener('change', saveName);
   }
@@ -274,55 +274,111 @@
         h('li', null, 'Når du en ', h('b', null, 'poänggräns'), ' får du ett extraliv, eller en powerup som skickar turen till valfri spelare.')));
   }
 
+  function wordmark(big) {
+    return h('div', { class: 'wordmark' + (big ? ' big' : '') },
+      h('div', { class: 'wm-title' }, 'UNIKUM'),
+      h('div', { class: 'wm-sub' }, 'Ordjakten vid tigerns bord'),
+      big ? h('div', { class: 'wm-tag' }, 'Kom på ordet ingen annan tänker på') : null);
+  }
+
+  // Panel i hörnen, t.ex. rumskod och antal spelare
+  function hudPanel(label, value, cls, onclick) {
+    return h(onclick ? 'button' : 'div', { class: 'hudpanel ' + (cls || ''), onclick },
+      h('span', { class: 'hp-label' }, label), h('span', { class: 'hp-value' }, value));
+  }
+
+  function hud(left, center, right, leftIcons, rightIcons) {
+    return h('div', { class: 'hud' },
+      h('div', { class: 'hudrow' }, left, h('div', { class: 'hud-center' }, center), right),
+      h('div', { class: 'hudrow icons' }, h('div', { class: 'iconset' }, ...leftIcons), h('div', { class: 'iconset' }, ...rightIcons)));
+  }
+
+  function iconBtn(icon, label, onclick) {
+    return h('button', { class: 'iconbtn', 'aria-label': label, title: label, onclick }, icon);
+  }
+
+  async function shareRoom() {
+    const link = `${location.origin}/?rum=${state.code}`;
+    if (navigator.share) { try { await navigator.share({ title: 'Unikum', text: `Spela Unikum med mig! Kod: ${state.code}`, url: link }); return; } catch {} }
+    try { await navigator.clipboard.writeText(link); toast('Länken är kopierad!', 'good'); } catch { toast(link); }
+  }
+
+  function updateSeats(opts) {
+    for (const [pid, s] of table.seats) {
+      const p = player(pid);
+      if (!p) continue;
+      s.el.classList.toggle('turn', pid === opts.active);
+      s.el.classList.toggle('dead', !opts.lobby && !p.alive && !p.spectator);
+      s.el.classList.toggle('off', !p.connected);
+      s.el.classList.toggle('me', pid === me);
+      s.el.classList.toggle('host', pid === state.hostId);
+      s.el.querySelector('.nm').textContent = pid === me ? 'Du' : p.name;
+      renderHearts(s, opts.lobby ? { ...p, lives: state.settings.lives, spectator: false } : p);
+      s.el.classList.toggle('pickable', !!opts.pickable && opts.pickable(p));
+      const badge = s.el.querySelector('.badge');
+      const btxt = opts.lobby ? (pid === state.hostId ? 'VÄRD' : '') : p.passes ? '🎯×' + p.passes : '';
+      if (badge.textContent !== btxt) badge.textContent = btxt;
+      const pts = s.el.querySelector('.pts');
+      const ptxt = opts.lobby ? '' : p.score + ' p';
+      if (pts.textContent !== ptxt) pts.textContent = ptxt;
+    }
+  }
+
+  let kickArm = null;
   function renderLobby() {
-    renderedKey = 'lobby'; table = null;
     const s = state.settings;
     const host = isHost();
-    const link = `${location.origin}/?rum=${state.code}`;
-    const setS = (patch) => sendMsg({ t: 'settings', settings: { ...s, ...patch, packs: { ...s.packs, ...(patch.packs || {}) } } });
-    const seg = (vals, cur, fmt, onpick) => h('div', { class: 'seg' }, vals.map((v) =>
-      h('button', { class: v === cur ? 'sel' : '', disabled: !host, onclick: () => onpick(v) }, fmt(v))));
-    const toggle = (label, on, onflip, hint) => h('div', { class: 'toggle' },
-      h('div', null, label, hint ? h('div', { class: 'muted', style: 'font-size:13px' }, hint) : null),
-      h('button', { class: 'switch' + (on ? ' on' : ''), disabled: !host, 'aria-label': label, 'aria-pressed': on ? 'true' : 'false', onclick: onflip }));
-    const share = async () => {
-      if (navigator.share) { try { await navigator.share({ title: 'Unikum', text: `Spela Unikum med mig! Kod: ${state.code}`, url: link }); return; } catch {} }
-      try { await navigator.clipboard.writeText(link); toast('Länken är kopierad!', 'good'); } catch { toast(link); }
-    };
     const connected = state.players.filter((p) => p.connected);
-    app.replaceChildren(
-      h('div', { class: 'topbar' },
-        h('button', { class: 'btn small secondary', onclick: leaveRoom }, '← Lämna'),
-        h('span', null, `${connected.length}/8 spelare`),
-        soundBtn()),
-      h('div', { class: 'card stack center' },
-        h('p', { class: 'label' }, 'Rumskod'),
-        h('div', { class: 'roomcode' }, state.code),
-        h('button', { class: 'btn secondary block', onclick: share }, '📨 Bjud in vänner'),
-        h('p', { class: 'muted', style: 'margin:8px 0 0;font-size:14px' }, 'Vännerna öppnar länken eller skriver in koden på sin egen enhet.')),
-      h('div', { class: 'card stack', style: 'margin-top:14px' },
-        h('p', { class: 'label' }, 'Spelare'),
-        h('div', { class: 'players' }, state.players.map((p) => h('div', { class: 'pl' + (p.connected ? '' : ' off') },
-          p.id === state.hostId ? h('span', { class: 'crown', title: 'Värd' }, '👑') : null,
-          av(p),
-          h('div', { class: 'name' }, p.name, p.id === me ? h('span', { class: 'muted' }, ' (du)') : null),
-          host && p.id !== me ? h('button', { class: 'kick', title: 'Ta bort', 'aria-label': 'Ta bort ' + p.name, onclick: () => sendMsg({ t: 'kick', id: p.id }) }, '✕') : null)))),
-      h('div', { class: 'card settings', style: 'margin-top:14px' },
-        h('p', { class: 'label', style: 'margin:0' }, host ? 'Inställningar' : 'Inställningar (värden bestämmer)'),
-        h('div', null, h('div', { style: 'font-weight:700;margin-bottom:6px' }, 'Tid per tur'), seg([8, 10, 15, 20, 30], s.turnTime, (v) => v + ' s', (v) => setS({ turnTime: v }))),
-        h('div', null, h('div', { style: 'font-weight:700;margin-bottom:6px' }, 'Liv'), seg([1, 2, 3, 4, 5], s.lives, (v) => '❤️'.repeat(1) + ' ' + v, (v) => setS({ lives: v }))),
-        h('div', null, h('div', { style: 'font-weight:700;margin-bottom:6px' }, 'Kategorier'),
-          h('div', { class: 'seg' }, PACKS.map(([k, label]) => h('button', { class: s.packs[k] ? 'sel' : '', disabled: !host, onclick: () => setS({ packs: { [k]: !s.packs[k] } }) }, label)))),
-        toggle('Tempoökning', s.speedup, () => setS({ speedup: !s.speedup }), 'Tiden krymper med 2 s för varje varv'),
-        toggle('Strikt läge', s.strict, () => setS({ strict: !s.strict }), 'Bara ord från ordlistan, ingen röstning'),
-        h('div', null, h('div', { style: 'font-weight:700;margin-bottom:6px' }, 'Extraliv var'),
-          seg([0, 300, 500, 700, 1000], s.lifeEvery, (v) => (v ? v + ' p' : 'Av'), (v) => setS({ lifeEvery: v }))),
-        s.lifeEvery ? toggle('Powerup: Skicka turen', s.powerups, () => setS({ powerups: !s.powerups }), 'Vid poänggränsen väljer man extraliv eller att få skicka turen till valfri spelare') : null),
-      h('div', { class: 'answerbox' },
-        host
-          ? h('button', { class: 'btn block', onclick: () => sendMsg({ t: 'start' }) }, connected.length > 1 ? 'Starta spelet!' : 'Starta (öva själv)')
-          : h('div', { class: 'card center muted', style: 'font-weight:800' }, 'Väntar på att värden startar…')),
+    const tkey = seatOrder().map((p) => p.id).join(',');
+    if (renderedKey !== 'lobby' || !table || table.key !== tkey || !document.body.contains(table.el)) {
+      renderedKey = 'lobby';
+      table = buildTable();
+      table.tiger.dataset.mood = 'sleep';
+      app.replaceChildren(
+        hud(hudPanel('Rum', state.code, 'code', shareRoom), h('span', { id: 'hudcenter' }), hudPanel('Spelare', '', 'count'),
+          [iconBtn('⟵', 'Lämna rummet', leaveRoom), soundBtn()], [iconBtn('↗', 'Bjud in vänner', shareRoom)]),
+        wordmark(false),
+        table.el,
+        h('div', { id: 'lobbysettings' }),
+        h('div', { id: 'lobbybar' }));
+      // Värden kan ta bort spelare genom att trycka två gånger på deras plats
+      for (const [pid, st] of table.seats) {
+        st.el.addEventListener('click', () => {
+          if (!isHost() || pid === me || state.phase !== 'lobby') return;
+          if (kickArm === pid) { kickArm = null; sendMsg({ t: 'kick', id: pid }); return; }
+          kickArm = pid; toast(`Tryck igen för att ta bort ${player(pid)?.name || ''}`);
+          setTimeout(() => { if (kickArm === pid) kickArm = null; }, 3000);
+        });
+      }
+    }
+    document.querySelector('.hudpanel.count .hp-value').textContent = `${connected.length}/8`;
+    document.getElementById('hudcenter').textContent = 'Lobby';
+    updateSeats({ lobby: true });
+
+    // Inställningar som paneler. Värden trycker för att byta värde.
+    const cycle = (vals, cur) => vals[(vals.indexOf(cur) + 1) % vals.length];
+    const setS = (patch) => sendMsg({ t: 'settings', settings: { ...s, ...patch, packs: { ...s.packs, ...(patch.packs || {}) } } });
+    const stat = (label, value, onclick, wide) => h(host ? 'button' : 'div', { class: 'stat' + (host ? ' editable' : '') + (wide ? ' wide' : ''), onclick: host ? onclick : null },
+      h('span', { class: 'st-label' }, label), h('span', { class: 'st-value' }, value));
+    const packsOn = PACKS.filter(([k]) => s.packs[k]).length;
+    document.getElementById('lobbysettings').replaceChildren(
+      h('div', { class: 'statgrid' },
+        stat('Tid per tur', s.turnTime + ' s', () => setS({ turnTime: cycle([8, 10, 15, 20, 30], s.turnTime) })),
+        stat('Liv', String(s.lives), () => setS({ lives: cycle([1, 2, 3, 4, 5], s.lives) })),
+        stat('Extraliv', s.lifeEvery ? s.lifeEvery + ' p' : 'Av', () => setS({ lifeEvery: cycle([0, 300, 500, 700, 1000], s.lifeEvery) })),
+        stat('Tempo', s.speedup ? 'Ökar' : 'Fast', () => setS({ speedup: !s.speedup })),
+        stat('Powerup', s.lifeEvery && s.powerups ? 'På' : 'Av', () => setS({ powerups: !s.powerups })),
+        stat('Okända ord', s.strict ? 'Nej' : 'Röstas', () => setS({ strict: !s.strict }))),
+      h('div', { class: 'packs' },
+        h('span', { class: 'st-label' }, `Kategorier · ${packsOn} av ${PACKS.length}`),
+        h('div', { class: 'packchips' }, PACKS.map(([k, label]) => h('button', { class: 'pack' + (s.packs[k] ? ' on' : ''), disabled: !host, onclick: () => setS({ packs: { [k]: !s.packs[k] } }) }, label)))),
+      ...(host ? [] : [h('p', { class: 'footnote' }, 'Värden ändrar inställningarna')]),
     );
+    document.getElementById('lobbybar').replaceChildren(
+      host
+        ? h('button', { class: 'startbar', onclick: () => sendMsg({ t: 'start' }) },
+          h('span', { class: 'sb-arrow' }, '▶'), h('span', null, connected.length > 1 ? 'Starta spelet' : 'Starta och öva själv'), h('span', { class: 'sb-dim' }, ' · fler kan gå med'))
+        : h('div', { class: 'startbar idle' }, h('span', { class: 'sb-arrow' }, '▸'), h('span', null, 'Väntar på värden'), h('span', { class: 'sb-dim' }, ' · fler kan gå med')));
   }
 
   function soundBtn() {
@@ -382,6 +438,7 @@
       const bubble = h('div', { class: 'sbubble' + (below ? ' below' : '') + side });
       const el = h('div', { class: 'seat2' + (depth < 0.45 ? ' back' : ' front'), 'data-pid': p.id, style: `left:${x}%;top:${y}%;--sc:${sc};z-index:${depth < 0.45 ? 2 : 6}` },
         h('div', { class: 'spot' }),
+        h('div', { class: 'pedestal' }),
         h('div', { class: 'blob', style: `--c:${p.color}` }, h('span', { class: 'face' }, p.avatar)),
         h('div', { class: 'tag' }, h('span', { class: 'nm' }), h('span', { class: 'hearts' })),
         h('div', { class: 'pts' }),
@@ -433,10 +490,8 @@
       table = buildTable();
       shownAnswers = 0; shownRound = null; bottomKey = ''; overlayKey = ''; pointerAngle = null;
       app.replaceChildren(
-        h('div', { class: 'topbar' },
-          h('button', { class: 'btn small secondary', onclick: () => { if (confirmLeave()) leaveRoom(); } }, '← Lämna'),
-          h('span', { id: 'roundlbl' }),
-          soundBtn()),
+        hud(hudPanel('Rum', state.code, 'code'), h('span', { id: 'roundlbl' }), hudPanel('Kvar', '', 'count'),
+          [iconBtn('⟵', 'Lämna spelet', () => { if (confirmLeave()) leaveRoom(); }), soundBtn()], []),
         table.banner,
         table.el,
         h('div', { class: 'turnline', id: 'turnline' }),
@@ -445,7 +500,9 @@
         h('div', { id: 'overlay' }));
     }
     const meP = player(me);
-    document.getElementById('roundlbl').textContent = `Runda ${r.num}` + (meP && meP.spectator ? ' · Du tittar på' : '');
+    document.getElementById('roundlbl').textContent = `Runda ${r.num}` + (meP && meP.spectator ? ' · Åskådare' : '');
+    const inGame = state.players.filter((p) => !p.spectator);
+    document.querySelector('.hudpanel.count .hp-value').textContent = `${inGame.filter((p) => p.alive).length}/${inGame.length}`;
 
     // Kategori i mitten, vänds vid ny runda
     if (shownRound !== r.num) {
@@ -461,22 +518,7 @@
 
     // Platser
     const active = ['turn', 'vote'].includes(state.phase) ? r.turnPid : null;
-    for (const [pid, s] of table.seats) {
-      const p = player(pid);
-      if (!p) continue;
-      s.el.classList.toggle('turn', pid === active);
-      s.el.classList.toggle('dead', !p.alive && !p.spectator);
-      s.el.classList.toggle('off', !p.connected);
-      s.el.classList.toggle('me', pid === me);
-      s.el.querySelector('.nm').textContent = pid === me ? 'Du' : p.name;
-      renderHearts(s, p);
-      s.el.classList.toggle('pickable', passMode && myTurn && pid !== me && p.alive && p.connected);
-      const badge = s.el.querySelector('.badge');
-      const btxt = p.passes ? '🎯×' + p.passes : '';
-      if (badge.textContent !== btxt) badge.textContent = btxt;
-      const pts = s.el.querySelector('.pts');
-      if (pts.textContent !== p.score + ' p') pts.textContent = p.score + ' p';
-    }
+    updateSeats({ active, pickable: (p) => passMode && myTurn && p.id !== me && p.alive && p.connected });
 
     // Pilen i mitten pekar på den som har turen
     const seat = active && table.seats.get(active);
@@ -731,11 +773,11 @@
   function buildTiger() {
     const el = h('div', { class: 'tiger', 'data-mood': 'calm' });
     el.innerHTML = TIGER_SVG; // statisk egen grafik
-    el.append(h('div', { class: 'tiger-steam' }, h('i'), h('i')));
+    el.append(h('div', { class: 'tiger-steam' }, h('i'), h('i')), h('div', { class: 'zzz' }, h('i', null, 'z'), h('i', null, 'z'), h('i', null, 'z')));
     return el;
   }
 
-  const MOOD_ORDER = ['calm', 'alert', 'angry', 'furious'];
+  const MOOD_ORDER = ['sleep', 'calm', 'alert', 'angry', 'furious'];
   function setTigerMood(mood) {
     const t = table && table.tiger;
     if (!t || t.dataset.mood === mood || t.classList.contains('attacking')) return;
@@ -967,8 +1009,9 @@
     const w = player(state.winnerId);
     const solo = sorted.length === 1;
     app.replaceChildren(
-      h('div', { class: 'topbar' }, h('button', { class: 'btn small secondary', onclick: leaveRoom }, '← Lämna'), h('span', null, 'Spelet är slut'), soundBtn()),
-      h('div', { class: 'modal', style: 'margin:0 auto' },
+      hud(hudPanel('Rum', state.code, 'code'), h('span', null, 'Spelet är slut'), hudPanel('Spelare', String(sorted.length), 'count'),
+        [iconBtn('⟵', 'Lämna rummet', leaveRoom), soundBtn()], []),
+      h('div', { class: 'modal over' },
         h('div', { class: 'big' }, solo ? '🎯' : '🏆'),
         h('h2', null, solo ? `${sorted[0]?.score || 0} poäng!` : w ? (w.id === me ? 'Du vann!' : `${w.name} vann!`) : 'Spelet är slut'),
         h('p', { class: 'muted' }, solo ? 'Bra jobbat! Kan du slå det?' : 'Sist kvar med liv. Så här gick det:'),
@@ -984,7 +1027,7 @@
   }
 
   function confetti() {
-    const em = ['🎉', '⭐', '🎊', '✨', '🟡', '🟣'];
+    const em = ['✨', '⭐', '🌟', '🍃', '🎉', '💛'];
     for (let i = 0; i < 40; i++) {
       const c = h('div', { class: 'confetti', style: `left:${Math.random() * 100}vw;animation-duration:${2 + Math.random() * 2}s;animation-delay:${Math.random() * 0.8}s` }, em[i % em.length]);
       document.body.append(c);

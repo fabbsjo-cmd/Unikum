@@ -3,16 +3,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
-<meta name="theme-color" content="#1b1440">
+<meta name="theme-color" content="#07130f">
 <title>Unikum – ordspelet</title>
 <meta name="description" content="Kom på ordet ingen annan tänker på. Ett ordspel för 1–8 spelare.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<div class="scene" aria-hidden="true">
+  <div class="moon"></div>
+  <div class="rays"></div>
+  <svg class="jungle" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <linearGradient id="leafA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f2a22"/><stop offset="1" stop-color="#06140f"/></linearGradient>
+      <linearGradient id="leafB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#143a2e"/><stop offset="1" stop-color="#081a14"/></linearGradient>
+    </defs>
+    <!-- Bortre lager -->
+    <g fill="#0b2019" opacity=".9">
+      <path d="M-20 260 Q40 230 70 280 Q30 300 -20 300Z"/>
+      <path d="M420 230 Q350 210 330 270 Q370 290 420 280Z"/>
+      <path d="M0 800 L0 640 Q60 600 120 650 Q170 610 220 660 Q280 620 330 660 Q370 630 400 650 L400 800Z"/>
+    </g>
+    <!-- Stora blad i hörnen -->
+    <g fill="url(#leafA)">
+      <path d="M-30 40 Q90 60 150 170 Q60 150 -30 110Z"/>
+      <path d="M-40 150 Q60 170 110 260 Q30 250 -40 210Z"/>
+      <path d="M430 60 Q300 70 250 180 Q340 160 430 120Z"/>
+      <path d="M440 170 Q340 190 300 280 Q370 270 440 230Z"/>
+    </g>
+    <g fill="url(#leafB)">
+      <path d="M-20 560 Q80 520 140 600 Q60 640 -20 620Z"/>
+      <path d="M420 540 Q320 510 270 590 Q350 630 420 610Z"/>
+      <path d="M-30 700 Q70 650 150 720 Q60 770 -30 760Z"/>
+      <path d="M430 690 Q330 650 250 730 Q340 770 430 750Z"/>
+    </g>
+    <!-- Lianer -->
+    <g fill="none" stroke="#0d241c" stroke-width="4" stroke-linecap="round">
+      <path d="M40 0 Q55 120 30 230"/><path d="M370 0 Q350 90 380 190"/>
+    </g>
+    <g fill="#12322a">
+      <ellipse cx="34" cy="150" rx="9" ry="4" transform="rotate(-30 34 150)"/><ellipse cx="44" cy="190" rx="9" ry="4" transform="rotate(25 44 190)"/>
+      <ellipse cx="362" cy="80" rx="9" ry="4" transform="rotate(30 362 80)"/><ellipse cx="372" cy="140" rx="9" ry="4" transform="rotate(-25 372 140)"/>
+    </g>
+  </svg>
+  <div class="fog f1"></div><div class="fog f2"></div>
+  <div class="fireflies"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="grain"></div>
+  <div class="vignette"></div>
+</div>
 <div id="app"></div>
 <div id="toasts"></div>
 <script src="/app.js"></script>
