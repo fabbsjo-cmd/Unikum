@@ -99,6 +99,18 @@
     },
     slash() { beep(1200, 0.08, 'sawtooth', 0.08); beep(900, 0.08, 'sawtooth', 0.08, 0.07); beep(700, 0.1, 'sawtooth', 0.08, 0.14); },
     chomp() { beep(140, 0.12, 'square', 0.12); beep(110, 0.15, 'square', 0.12, 0.12); },
+    trombone() {
+      [[311, 0], [294, 0.32], [277, 0.64]].forEach(([f, w]) => beep(f, 0.3, 'sawtooth', 0.07, w));
+      if (muted) return;
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        const t0 = actx.currentTime + 0.96, o = actx.createOscillator(), g = actx.createGain(), lfo = actx.createOscillator(), lg = actx.createGain();
+        o.type = 'sawtooth'; o.frequency.setValueAtTime(262, t0); o.frequency.linearRampToValueAtTime(240, t0 + 1.1);
+        lfo.frequency.value = 6; lg.gain.value = 7; lfo.connect(lg).connect(o.frequency);
+        g.gain.setValueAtTime(0.07, t0); g.gain.linearRampToValueAtTime(0.06, t0 + 0.8); g.gain.exponentialRampToValueAtTime(0.001, t0 + 1.2);
+        o.connect(g).connect(actx.destination); o.start(t0); lfo.start(t0); o.stop(t0 + 1.2); lfo.stop(t0 + 1.2);
+      } catch {}
+    },
     win() { [523, 659, 784, 1047, 784, 1047].forEach((n, i) => beep(n, 0.2, 'triangle', 0.14, i * 0.12)); },
   };
 
@@ -200,8 +212,9 @@
       toast(`${m.from === me ? 'Du' : f?.name} skickade turen till ${m.to === me ? 'dig' : t?.name}!`);
     } else if (m.kind === 'lifeLost') {
       sfx.lose();
-      if (table && table.tiger) { tigerAttack(m.pid); setTimeout(() => bigHeart(m.pid), 1500); }
-      else { seatFx(m.pid, 'hit', '💔'); bigHeart(m.pid); }
+      const show = () => (m.out ? loserSign(m.pid) : bigHeart(m.pid));
+      if (table && table.tiger) { tigerAttack(m.pid); setTimeout(show, 1500); }
+      else { seatFx(m.pid, 'hit', '💔'); show(); }
       if (m.pid === me && navigator.vibrate) navigator.vibrate([100, 60, 100]);
     }
   }
@@ -880,12 +893,35 @@
     setTimeout(() => { el.remove(); seatFx(toPid, 'hit'); }, 820);
   }
 
+  // Retsamma kommentarer
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const TAUNT_LIFE_ME = ['Hjärnsläpp!', 'Tick tack… för sent!', 'Tigern tog en tugga 🐯', 'Aj aj aj!', 'Det där var pinsamt 😬', 'Tom i huvudet?'];
+  const TAUNT_LIFE = ['{n} fick hjärnsläpp!', '{n} blev tigermat… nästan', 'Tick tack, {n}!', '{n} kom inte på nåt 😂', 'Aj aj, {n}!'];
+  const TAUNT_OUT_ME = ['Tigern tackar för maten 🐯', 'Ordförrådet tog slut, va?', 'Ta en fika och tänk över livet ☕', 'Bättre lycka nästa gång… kanske', 'Du får titta på resten 👀'];
+  const TAUNT_OUT = ['{n} åker ut! Hejdå 👋', '{n} blev tigermat 🐯', 'Vi kommer (inte) sakna dig, {n}', 'Tack för besöket, {n} 👋', '{n} – ut ur leken!'];
+  const taunt = (arr, pid) => pick(arr).replace('{n}', player(pid)?.name || 'Någon');
+
   function bigHeart(pid) {
-    const p = player(pid);
     const el = h('div', { class: 'heartbreak' }, h('div', { class: 'hb' }, '💔'),
-      h('div', { class: 'hbtext' }, pid === me ? 'Du tappade ett liv!' : `${p ? p.name : ''} tappade ett liv!`));
+      h('div', { class: 'hbtext' }, pid === me ? taunt(TAUNT_LIFE_ME, pid) : taunt(TAUNT_LIFE, pid)));
     document.body.append(el);
     setTimeout(() => el.remove(), 1500);
+  }
+
+  function loserSign(pid) {
+    const p = player(pid);
+    sfx.trombone();
+    const el = h('div', { class: 'losersign' },
+      h('div', { class: 'ls-board' },
+        h('div', { class: 'ls-chain l' }), h('div', { class: 'ls-chain r' }),
+        h('div', { class: 'ls-who' }, p ? `${p.avatar} ${pid === me ? 'Du' : p.name}` : ''),
+        h('div', { class: 'ls-word' }, 'LOSER'),
+        h('div', { class: 'ls-sub' }, pid === me ? taunt(TAUNT_OUT_ME, pid) : taunt(TAUNT_OUT, pid))),
+      h('div', { class: 'ls-l' }, h('i'), h('i'), h('i')));
+    document.body.append(el);
+    seatFx(pid, 'hit', '🫵');
+    setTimeout(() => el.classList.add('out'), 2900);
+    setTimeout(() => el.remove(), 3400);
   }
 
   function seatFx(pid, cls, emoji) {
@@ -940,7 +976,7 @@
       const you = lr.loserPid === me;
       return h('div', { class: 'overlay delayed' }, h('div', { class: 'modal' },
         h('div', { class: 'big' }, lr.out ? '💀' : '💔'),
-        h('h2', null, you ? (lr.out ? 'Du är ute!' : 'Du tappade ett liv!') : `${p ? p.name : 'Någon'} ${lr.out ? 'är ute!' : 'tappade ett liv!'}`),
+        h('h2', null, you ? (lr.out ? 'Du är ute, loser!' : 'Du tappade ett liv!') : `${p ? p.name : 'Någon'} ${lr.out ? 'är ute. Loser!' : 'tappade ett liv!'}`),
         h('p', { class: 'muted' }, `Ni hittade ${lr.found} av ${lr.total} möjliga i ”${lr.category}”.`),
         lr.missed.length ? h('div', null, h('p', { class: 'label', style: 'margin-top:14px' }, 'Vanliga svar ni missade'), h('div', { class: 'chips' }, lr.missed.map((w) => h('span', { class: 'chip' }, w)))) : null,
         lr.rare.length ? h('div', null, h('p', { class: 'label', style: 'margin-top:14px' }, 'Legendariska svar'), h('div', { class: 'chips' }, lr.rare.map((w) => h('span', { class: 'chip l' }, w)))) : null,
@@ -1014,7 +1050,7 @@
       h('div', { class: 'modal over' },
         h('div', { class: 'big' }, solo ? '🎯' : '🏆'),
         h('h2', null, solo ? `${sorted[0]?.score || 0} poäng!` : w ? (w.id === me ? 'Du vann!' : `${w.name} vann!`) : 'Spelet är slut'),
-        h('p', { class: 'muted' }, solo ? 'Bra jobbat! Kan du slå det?' : 'Sist kvar med liv. Så här gick det:'),
+        h('p', { class: 'muted' }, solo ? 'Bra jobbat! Kan du slå det?' : w && w.id === me ? 'Sist kvar! Alla andra är losers 😎' : 'Sist kvar med liv. Bättre lycka nästa gång, loser 😏'),
         h('div', { class: 'podium' }, sorted.map((p, i) => h('div', { class: 'pl' },
           h('div', { class: 'rank' }, i === 0 && !solo ? '👑' : i + 1), av(p),
           h('div', { style: 'min-width:0' }, h('div', { class: 'name' }, p.name),

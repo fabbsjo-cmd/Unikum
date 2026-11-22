@@ -259,7 +259,7 @@ function timeout(room) {
     found: r.answers.length,
   };
   room.phase = 'roundEnd';
-  event(room, { kind: 'lifeLost', pid: loser && loser.id });
+  event(room, { kind: 'lifeLost', pid: loser && loser.id, out: !!(loser && !loser.alive) });
   sync(room);
   setTimer(room, 7500, () => afterRound(room));
 }
